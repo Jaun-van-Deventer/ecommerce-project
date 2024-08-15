@@ -3,7 +3,8 @@
 import db from "@/db/db"
 import { z } from "zod"
 import fs from "fs/promises"
-import { redirect } from "next/navigation"
+import { notFound, redirect } from "next/navigation"
+import crypto from "crypto" 
 
 const fileSchema = z.instanceof(File, {message: "Required"})
 const imageSchema = fileSchema.refine(
@@ -13,12 +14,12 @@ const imageSchema = fileSchema.refine(
 const addSchema = z.object({
     name: z.string().min(1),
     description: z.string().min(1),
-    priceInCents: z.coerce.number(),
+    priceInCents: z.coerce.number().int().min(1),
     file:fileSchema.refine(file => file.size > 0, "Required"),
     image:fileSchema.refine(file => file.size > 0, "Required"),
 })
 
-export async function addProduct(formData: FormData) {
+export async function addProduct(prevState: unknown, formData: FormData) {
     const result = addSchema.safeParse(Object.fromEntries(formData.entries()))
     if (result.success === false) {
         return result.error.formErrors.fieldErrors
@@ -31,16 +32,31 @@ export async function addProduct(formData: FormData) {
     await fs.writeFile(filePath, Buffer.from(await data.file.arrayBuffer()))
 
     await fs.mkdir("public/products", {recursive: true})
-    const imagePath = `products/${crypto.randomUUID()}-${data.image.name}`
-    await fs.writeFile(`public${imagePath}`, Buffer.from(await data.file.arrayBuffer()))
+    const imagePath = `/products/${crypto.randomUUID()}-${data.image.name}`
+    await fs.writeFile(`public${imagePath}`, Buffer.from(await data.image.arrayBuffer()))
 
-    db.product.create({data: {
-        name:data.name,
-        description: data.description,
-        priceInCents: data.priceInCents,
-        filePath,
-        imagePath 
+    await db.product.create({
+        data: {
+            isAvailableForPurchase: false,
+            name:data.name,
+            description: data.description,
+            priceInCents: data.priceInCents,
+            filePath,
+            imagePath 
     }})
 
     redirect("/admin/products")
+}
+
+export async function toggleProductAvailability(id: string, isAvailableForPurchase: boolean) {
+    await db.product.update({ where: { id }, data: { isAvailableForPurchase } })
+}
+
+export async function deleteProduct(id: string) {
+    const product = await db.product.delete({ where: { id } })
+
+    if (product == null) return notFound()
+
+    await fs.unlink(product.filePath)
+    await fs.unlink(`public${product.imagePath}`)
 }
