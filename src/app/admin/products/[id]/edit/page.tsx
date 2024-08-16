@@ -8,7 +8,7 @@ export default async function EditProductPage( {params: {id}} : {params: {id: st
     return ( 
         <>
             <PageHeader>Edit Product</PageHeader>
-            <ProductForm />
+            <ProductForm product={product} />
         </>
     )
 }
